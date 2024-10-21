@@ -7,11 +7,13 @@ import dlib
 import numpy as np
 import face_recognition
 
-def reorder_secondary_photos(input_folder, json_file_path, reorder_output_folder):
-    """Reorders secondary photos based on 'takenAt' date from JSON."""
+def reorder_secondary_photos(extract_path, json_file_path, reorder_output_folder):
+    """Reorders secondary photos from 'photos/bereal/' and 'photos/post/' based on 'takenAt' date."""
+    # Load metadata from posts.json
     with open(json_file_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
+    # Collect file names and their associated dates from the JSON
     file_date_pairs = []
     for entry in data:
         if 'secondary' in entry and 'path' in entry['secondary']:
@@ -22,32 +24,44 @@ def reorder_secondary_photos(input_folder, json_file_path, reorder_output_folder
             date_obj = datetime.strptime(date_str, '%Y-%m-%d')
             file_date_pairs.append((file_name, date_str, date_obj))
 
+    # Sort the photos by date
     file_date_pairs.sort(key=lambda x: x[2])
 
+    # Create the output folder if it doesn't exist
     if not os.path.exists(reorder_output_folder):
         os.makedirs(reorder_output_folder)
 
-    for file_name, date_str, _ in file_date_pairs:
-        source_path_jpg = os.path.join(input_folder, f"{file_name}.jpg")
-        source_path_webp = os.path.join(input_folder, f"{file_name}.webp")
-        destination_file_name_jpg = f"{date_str}_{file_name}.jpg"
-        destination_file_name_webp = f"{date_str}_{file_name}.webp"
-        destination_path_jpg = os.path.join(reorder_output_folder, destination_file_name_jpg)
-        destination_path_webp = os.path.join(reorder_output_folder, destination_file_name_webp)
+    # Search for images only in 'bereal/' and 'post/' subfolders
+    bereal_folder = os.path.join(extract_path, "photos", "bereal")
+    post_folder = os.path.join(extract_path, "photos", "post")
 
-        if os.path.exists(source_path_jpg):
-            shutil.move(source_path_jpg, destination_path_jpg)
-        elif os.path.exists(source_path_webp):
-            shutil.move(source_path_webp, destination_path_webp)
+    for file_name, date_str, _ in file_date_pairs:
+        # Search for the image in both relevant folders
+        source_path = find_image_in_specific_folders([bereal_folder, post_folder], file_name)
+
+        if source_path:
+            # Rename and move the file
+            extension = os.path.splitext(source_path)[1]
+            destination_file_name = f"{date_str}_{file_name}{extension}"
+            destination_path = os.path.join(reorder_output_folder, destination_file_name)
+            shutil.move(source_path, destination_path)
 
     print("Reordering complete.")
+
+def find_image_in_specific_folders(folders, file_name):
+    """Search for an image file in the specified folders."""
+    for folder in folders:
+        if os.path.exists(folder):
+            for file in os.listdir(folder):
+                if file.startswith(file_name):  # Match by name, ignoring extension
+                    return os.path.join(folder, file)
+    return None
 
 def find_reference_face(detector, reorder_output_folder):
     """Find the first image with exactly one face to use as a reference."""
     for entry in os.scandir(reorder_output_folder):
         if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'webp')):
-            image_path = entry.path
-            image = cv2.imread(image_path)
+            image = cv2.imread(entry.path)
             if image is None:
                 continue
 
@@ -77,11 +91,7 @@ def process_images(reorder_output_folder, aligned_output_folder, predictor_path)
 
     for entry in os.scandir(reorder_output_folder):
         if entry.is_file() and entry.name.lower().endswith(('jpg', 'jpeg', 'png', 'webp')):
-            image_path = entry.path
-            image = cv2.imread(image_path)
-            if image is None:
-                continue
-
+            image = cv2.imread(entry.path)
             aligned_face = align_and_resize_face(image, predictor, detector, reference_face_encoding)
             if aligned_face is not None:
                 output_path = os.path.join(aligned_output_folder, entry.name)
