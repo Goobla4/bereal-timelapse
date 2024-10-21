@@ -3,6 +3,6 @@ uvicorn
 python-multipart
 aiofiles
 opencv-python-headless
-dlib
+dlib==19.24.0
 face-recognition
 numpy
